@@ -1,6 +1,7 @@
 """Sensor platform for bg_electricity_regulated_pricing integration."""
 from __future__ import annotations
 
+from datetime import datetime
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, \
     SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -132,16 +133,28 @@ class BgElectricityRegulatedPricingProvider:
         self._price_provider = price_provider
 
     def tariff(self):
-        # Current hour and minutes in minutes since midnight, UTC+2.
-        # Night tariff starts at 22:00 and ends ot 06:00 UTC+2 (no summer time)
-        utc = now_utc()
-        hour_minutes = (
-                               (utc.hour + 2) % 24 * 60
-                               + utc.minute
-                               + self._clock_offset
-                       ) % 1440
+        # Get local time (includes daylight saving time if server is configured correctly)
+        local_time = datetime.now()
+    
+        # Determine seasonal tariff window
+        year = local_time.year
+        summer_start = datetime(year, 4, 1)
+        summer_end = datetime(year, 10, 31, 23, 59)
+    
+        if summer_start <= local_time <= summer_end:
+            # Summer period: night is from 23:00 to 07:00
+            night_start = 23 * 60
+            night_end = 7 * 60
+        else:
+            # Winter period: night is from 22:00 to 06:00
+            night_start = 22 * 60
+            night_end = 6 * 60
+    
+        # Time in minutes since midnight, adjusted by optional clock offset
+        hour_minutes = (local_time.hour * 60 + local_time.minute + self._clock_offset) % 1440
+    
         if self._tariff_type == "dual":
-            if hour_minutes >= 22 * 60 or hour_minutes < 6 * 60:
+            if night_start <= hour_minutes or hour_minutes < night_end:
                 return "night"
         return "day"
 
